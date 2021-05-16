@@ -5,10 +5,10 @@ import (
 )
 
 func Middlewares(main http.Handler, middlewares ...func(handler http.Handler) http.Handler) http.Handler {
-	var h = main
+	handler := main
 	for i := range middlewares {
-		h = middlewares[len(middlewares)-1-i](h)
+		handler = middlewares[len(middlewares)-1-i](handler)
 	}
 
-	return h
+	return handler
 }
