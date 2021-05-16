@@ -3,15 +3,20 @@ package server
 import (
 	"net/http"
 
+	"github.com/diegodesousas/clean-boilerplate-go/infra/monitor"
+
 	"github.com/diegodesousas/clean-boilerplate-go/infra/http/middlewares"
 	"github.com/diegodesousas/clean-boilerplate-go/infra/logger"
 	"github.com/julienschmidt/httprouter"
+	"github.com/newrelic/go-agent/v3/newrelic"
 	"github.com/spf13/viper"
 )
 
 type Server struct {
 	http.Server
-	router *httprouter.Router
+	routes    []Route
+	router    *httprouter.Router
+	nrWrapper monitor.NewRelicWrapper
 }
 
 type Config func(server *Server)
@@ -27,7 +32,8 @@ func NewServer(configs ...Config) *Server {
 		Server: http.Server{
 			Addr: ":" + viper.GetString("HTTP_PORT"),
 		},
-		router: httprouter.New(),
+		router:    httprouter.New(),
+		nrWrapper: monitor.NewRelicWrapperDefault,
 	}
 
 	server.Server.Handler = middlewares.Middlewares(
@@ -41,6 +47,8 @@ func NewServer(configs ...Config) *Server {
 		config(server)
 	}
 
+	server.buildRoutes()
+
 	return server
 }
 
@@ -53,11 +61,25 @@ func (s *Server) ListenAndServe() error {
 }
 
 func (s *Server) Route(r Route) {
-	s.router.Handler(r.Method, r.Path, middlewares.NewRelicWrapper(r.Path, r.Handler))
+	s.routes = append(s.routes, r)
+}
+
+func (s *Server) buildRoutes() {
+	for _, r := range s.routes {
+		s.router.Handler(r.Method, r.Path, s.nrWrapper(r.Path, r.Handler))
+	}
+
+	s.routes = []Route{}
 }
 
 func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 
 	s.router.ServeHTTP(w, req)
+}
+
+func WithNewRelicWrapper(app *newrelic.Application) Config {
+	return func(server *Server) {
+		server.nrWrapper = monitor.NewNewRelicWrapper(app)
+	}
 }

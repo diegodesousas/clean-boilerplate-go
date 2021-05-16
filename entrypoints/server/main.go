@@ -7,11 +7,12 @@ import (
 	"os/signal"
 	"syscall"
 
+	"github.com/diegodesousas/clean-boilerplate-go/infra/monitor"
+
 	"cloud.google.com/go/pubsub"
 	"github.com/diegodesousas/clean-boilerplate-go/infra/config"
 	"github.com/diegodesousas/clean-boilerplate-go/infra/database"
 	"github.com/diegodesousas/clean-boilerplate-go/infra/http/handlers/healthcheck"
-	"github.com/diegodesousas/clean-boilerplate-go/infra/http/middlewares"
 	"github.com/diegodesousas/clean-boilerplate-go/infra/http/server"
 	"github.com/spf13/viper"
 	"google.golang.org/api/option"
@@ -27,7 +28,8 @@ func main() {
 		log.Fatal(err)
 	}
 
-	if err := middlewares.InitNewRelic(); err != nil {
+	nrApp, err := monitor.New()
+	if err != nil {
 		log.Fatal(err)
 	}
 
@@ -44,8 +46,8 @@ func main() {
 	}
 
 	s := server.NewServer(
+		server.WithNewRelicWrapper(nrApp),
 		healthcheck.Routes(database.Pool()),
-		// setup app routes
 	)
 
 	go func() {
