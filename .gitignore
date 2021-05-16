@@ -1,0 +1,13 @@
+/.idea/
+*.out
+/vendor/
+*.env
+/server
+*.html
+main
+/postgres12-data
+/.charge-test/results.bin
+/.charge-test/results-plot.html
+/.gcp/
+/coverage.txt
+/coverage.xml
