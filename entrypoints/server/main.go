@@ -57,26 +57,20 @@ func main() {
 		}
 	}()
 
-	for {
-		select {
-		case <-interrupt:
-			log.Println("shutdown application")
-			log.Println("shutdown http server")
-			if err := s.Shutdown(context.Background()); err != nil {
-				log.Printf("http: %s", err)
-			}
+	<-interrupt
+	log.Println("shutdown application")
+	log.Println("shutdown http server")
+	if err := s.Shutdown(context.Background()); err != nil {
+		log.Printf("http: %s", err)
+	}
 
-			log.Println("close database connections")
-			if err := database.ClosePool(); err != nil {
-				log.Printf("http: %s", err)
-			}
+	log.Println("close database connections")
+	if err := database.ClosePool(); err != nil {
+		log.Printf("http: %s", err)
+	}
 
-			log.Println("close pubsub connections")
-			if err := pubsubClient.Close(); err != nil {
-				log.Printf("queue: %s", err)
-			}
-
-			return
-		}
+	log.Println("close pubsub connections")
+	if err := pubsubClient.Close(); err != nil {
+		log.Printf("queue: %s", err)
 	}
 }
