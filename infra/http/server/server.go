@@ -1,25 +1,33 @@
 package server
 
 import (
+	"context"
+	"log"
 	"net/http"
-
-	"github.com/diegodesousas/clean-boilerplate-go/infra/monitor"
+	"os"
+	"os/signal"
+	"syscall"
 
 	"github.com/diegodesousas/clean-boilerplate-go/infra/http/middlewares"
-	"github.com/diegodesousas/clean-boilerplate-go/infra/logger"
 	"github.com/julienschmidt/httprouter"
-	"github.com/newrelic/go-agent/v3/newrelic"
 	"github.com/spf13/viper"
+)
+
+var DefaultMonitorWrapper = func(path string, handler http.Handler) http.Handler {
+	return handler
+}
+
+type (
+	Config         func(server *Server)
+	MonitorWrapper func(path string, handler http.Handler) http.Handler
 )
 
 type Server struct {
 	http.Server
-	routes    []Route
-	router    *httprouter.Router
-	nrWrapper monitor.NewRelicWrapper
+	routes         []Route
+	router         *httprouter.Router
+	monitorWrapper MonitorWrapper
 }
-
-type Config func(server *Server)
 
 type Route struct {
 	Path    string
@@ -32,14 +40,14 @@ func NewServer(configs ...Config) *Server {
 		Server: http.Server{
 			Addr: ":" + viper.GetString("HTTP_PORT"),
 		},
-		router:    httprouter.New(),
-		nrWrapper: monitor.NewRelicWrapperDefault,
+		router:         httprouter.New(),
+		monitorWrapper: DefaultMonitorWrapper,
 	}
 
 	server.Server.Handler = middlewares.Middlewares(
 		server,
 		middlewares.PanicRecoveryMiddleware,
-		logger.Middleware,
+		middlewares.Logger,
 		middlewares.LogRouteMiddleware,
 	)
 
@@ -52,9 +60,32 @@ func NewServer(configs ...Config) *Server {
 	return server
 }
 
-func (s *Server) ListenAndServe() error {
-	if err := s.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-		return err
+type ShutdownHandler func(ctx context.Context) error
+
+func (s *Server) ListenAndServe(ctx context.Context, handlers ...ShutdownHandler) error {
+	interrupt := make(chan os.Signal, 1)
+	signal.Notify(interrupt, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+
+	go func() {
+		if err := s.Server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			log.Print(err)
+		}
+
+		interrupt <- syscall.SIGTERM
+	}()
+
+	<-interrupt
+	log.Println("shutdown application")
+	log.Println("shutdown http server")
+	if err := s.Shutdown(ctx); err != nil {
+		log.Printf("http: %s", err)
+	}
+
+	for _, handler := range handlers {
+		err := handler(ctx)
+		if err != nil {
+			log.Print(err)
+		}
 	}
 
 	return nil
@@ -66,7 +97,7 @@ func (s *Server) Route(r Route) {
 
 func (s *Server) buildRoutes() {
 	for _, r := range s.routes {
-		s.router.Handler(r.Method, r.Path, s.nrWrapper(r.Path, r.Handler))
+		s.router.Handler(r.Method, r.Path, s.monitorWrapper(r.Path, r.Handler))
 	}
 
 	s.routes = []Route{}
@@ -78,8 +109,12 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 	s.router.ServeHTTP(w, req)
 }
 
-func WithNewRelicWrapper(app *newrelic.Application) Config {
+func WithMonitorWrapper(wrapper MonitorWrapper) Config {
 	return func(server *Server) {
-		server.nrWrapper = monitor.NewNewRelicWrapper(app)
+		if wrapper == nil {
+			return
+		}
+
+		server.monitorWrapper = wrapper
 	}
 }

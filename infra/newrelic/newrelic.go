@@ -1,18 +1,11 @@
-package monitor
+package newrelic
 
 import (
 	"net/http"
 
+	"github.com/diegodesousas/clean-boilerplate-go/infra/http/server"
 	"github.com/newrelic/go-agent/v3/newrelic"
 	"github.com/spf13/viper"
-)
-
-type NewRelicWrapper func(path string, handler http.Handler) http.Handler
-
-var (
-	NewRelicWrapperDefault = func(path string, handler http.Handler) http.Handler {
-		return handler
-	}
 )
 
 func New() (*newrelic.Application, error) {
@@ -29,9 +22,14 @@ func New() (*newrelic.Application, error) {
 	return app, nil
 }
 
-func NewNewRelicWrapper(app *newrelic.Application) NewRelicWrapper {
+func NewMonitorWrapper() server.MonitorWrapper {
+	nrApp, err := New()
+	if err != nil {
+		return nil
+	}
+
 	return func(path string, handler http.Handler) http.Handler {
-		_, h := newrelic.WrapHandle(app, path, handler)
+		_, h := newrelic.WrapHandle(nrApp, path, handler)
 		return h
 	}
 }
